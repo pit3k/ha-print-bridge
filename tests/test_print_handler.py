@@ -11,9 +11,12 @@ import struct
 import pytest
 
 from print_handler import (
+    async_probe_ipp_endpoint,
     build_get_printer_attributes_packet,
     build_ipp_packet,
     determine_sides,
+    http_url_to_ipp_uri,
+    ipp_response_is_valid,
     ipp_response_succeeded,
     is_booklet_job,
     parse_ipp_attributes,
@@ -290,3 +293,104 @@ def test_determine_sides(duplex_mode, booklet, expected_sides):
 )
 def test_is_booklet_job(filename, patterns, expected):
     assert is_booklet_job(filename, patterns) is expected
+
+
+# ── IPP reachability probe ────────────────────────────────────────────────────
+
+
+def test_ipp_response_is_valid_accepts_success_and_error_status():
+    success = struct.pack(">HHI", 0x0200, 0x0000, 1) + b"\x03"
+    busy = struct.pack(">HHI", 0x0101, 0x0507, 1) + b"\x03"
+
+    assert ipp_response_is_valid(success) is True
+    assert ipp_response_is_valid(busy) is True
+
+
+def test_ipp_response_is_valid_rejects_non_ipp():
+    assert ipp_response_is_valid(b"") is False
+    assert ipp_response_is_valid(b"<!DOCTYPE HTML><html></html>") is False
+
+
+async def test_async_probe_ipp_endpoint_posts_get_printer_attributes():
+    from unittest.mock import AsyncMock, MagicMock
+
+    import aiohttp
+
+    url = "http://printer.local:631/ipp/print"
+    body = struct.pack(">HHI", 0x0200, 0x0000, 1) + b"\x03"
+    resp = MagicMock()
+    resp.read = AsyncMock(return_value=body)
+    resp.__aenter__ = AsyncMock(return_value=resp)
+    resp.__aexit__ = AsyncMock(return_value=False)
+    session = MagicMock()
+    session.post.return_value = resp
+
+    assert await async_probe_ipp_endpoint(session, url, timeout=5) is True
+
+    session.post.assert_called_once()
+    args, kwargs = session.post.call_args
+    assert args[0] == url
+    assert kwargs["headers"] == {"Content-Type": "application/ipp"}
+    assert isinstance(kwargs["timeout"], aiohttp.ClientTimeout)
+    assert kwargs["timeout"].total == 5
+    packet = kwargs["data"]
+    assert struct.unpack(">H", packet[2:4])[0] == 0x000B
+    assert http_url_to_ipp_uri(url).encode() in packet
+
+
+@pytest.mark.parametrize(
+    "status_code",
+    [0x0000, 0x040A, 0x0507],
+)
+async def test_async_probe_ipp_endpoint_accepts_any_valid_ipp_status(status_code):
+    from unittest.mock import AsyncMock, MagicMock
+
+    body = struct.pack(">HHI", 0x0200, status_code, 1) + b"\x03"
+    resp = MagicMock()
+    resp.read = AsyncMock(return_value=body)
+    resp.__aenter__ = AsyncMock(return_value=resp)
+    resp.__aexit__ = AsyncMock(return_value=False)
+    session = MagicMock()
+    session.post.return_value = resp
+
+    assert await async_probe_ipp_endpoint(
+        session, "http://printer.local/ipp/print"
+    ) is True
+
+
+async def test_async_probe_ipp_endpoint_returns_false_on_non_ipp_body():
+    from unittest.mock import AsyncMock, MagicMock
+
+    resp = MagicMock()
+    resp.read = AsyncMock(return_value=b"<!DOCTYPE HTML>")
+    resp.__aenter__ = AsyncMock(return_value=resp)
+    resp.__aexit__ = AsyncMock(return_value=False)
+    session = MagicMock()
+    session.post.return_value = resp
+
+    assert await async_probe_ipp_endpoint(
+        session, "http://printer.local/ipp/print"
+    ) is False
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        "ClientError",
+        "ServerDisconnectedError",
+        "OSError",
+        "TimeoutError",
+    ],
+)
+async def test_async_probe_ipp_endpoint_returns_false_on_connection_errors(exc):
+    import aiohttp
+
+    session = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()
+    err_cls = TimeoutError if exc == "TimeoutError" else (
+        OSError if exc == "OSError" else getattr(aiohttp, exc)
+    )
+    session.post.side_effect = err_cls("closed")
+
+    assert await async_probe_ipp_endpoint(
+        session, "http://printer.local/ipp/print"
+    ) is False

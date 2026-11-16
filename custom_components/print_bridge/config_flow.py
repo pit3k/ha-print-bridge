@@ -23,6 +23,8 @@ from homeassistant.exceptions import TemplateError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.template import Template
 
+from .print_handler import async_probe_ipp_endpoint
+
 from .const import (
     CONF_ALLOWED_SENDERS,
     CONF_AUTO_DELETE,
@@ -453,13 +455,12 @@ class AutoPrintConfigFlow(ConfigFlow, domain=DOMAIN):
                 try:
                     # verify_ssl=False: home printers use self-signed/no certificates
                     session = async_get_clientsession(self.hass, verify_ssl=False)
-                    async with session.head(
-                        check_url, timeout=aiohttp.ClientTimeout(total=5)
-                    ) as resp:
-                        if resp.status >= 500:
-                            errors[CONF_DIRECT_PRINTER_URL] = "cannot_connect_cups"
-                except (aiohttp.ClientError, OSError):
-                    errors[CONF_DIRECT_PRINTER_URL] = "cannot_connect_cups"
+                    # Some printers close HTTP HEAD on the IPP endpoint;
+                    # probe with IPP Get-Printer-Attributes instead.
+                    if not await async_probe_ipp_endpoint(
+                        session, check_url, timeout=5
+                    ):
+                        errors[CONF_DIRECT_PRINTER_URL] = "cannot_connect_cups"
                 except Exception:
                     errors[CONF_DIRECT_PRINTER_URL] = "unknown"
 

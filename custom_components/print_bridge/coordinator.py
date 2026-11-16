@@ -136,6 +136,7 @@ from .print_profiles import (
     resolve_default_print_type,
 )
 from .print_handler import (
+    async_probe_ipp_endpoint,
     build_ipp_packet,
     build_get_printer_attributes_packet,
     cups_printer_uri,
@@ -4652,7 +4653,14 @@ class AutoPrintCoordinator(DataUpdateCoordinator[AutoPrintData]):
 
     async def _async_check_printer_online(self) -> bool:
         """Return True if the printer or CUPS server is reachable."""
-        check_url = self._ipp_endpoint if self._is_direct_mode else self._cups_url
+        if self._is_direct_mode:
+            # Some printers close HTTP HEAD on the IPP endpoint;
+            # probe with IPP Get-Printer-Attributes instead.
+            session = async_get_clientsession(self.hass, verify_ssl=False)
+            return await async_probe_ipp_endpoint(
+                session, self._ipp_endpoint, timeout=5
+            )
+        check_url = self._cups_url
         session = async_get_clientsession(self.hass)
         try:
             async with session.head(

@@ -1,7 +1,8 @@
 """IPP 2.0 packet construction for the Print Bridge integration.
 
-All functions are pure (no I/O, no HA dependencies).  Network I/O is handled
-by the coordinator using aiohttp.
+Packet-construction helpers are pure (no I/O, no HA dependencies).
+Reachability probing uses aiohttp; other network I/O is handled by the
+coordinator.
 
 Two printing modes are supported:
 
@@ -19,6 +20,8 @@ import logging
 import os
 import struct
 import unicodedata
+
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
@@ -375,6 +378,48 @@ def ipp_response_succeeded(response: bytes) -> tuple[bool, str]:
     if status_code is None:
         return False, description
     return status_code < 0x0100, description
+
+
+
+def ipp_response_is_valid(response: bytes) -> bool:
+    """Return True if *response* is a parseable IPP 1.x/2.x packet.
+
+    Any status is accepted, including IPP client/server errors.  Status
+    ``0x0000`` (successful-ok) is the usual success case.
+    """
+    status_code, _ = parse_ipp_response_status(response)
+    return status_code is not None
+
+
+async def async_probe_ipp_endpoint(
+    session: aiohttp.ClientSession,
+    http_url: str,
+    *,
+    timeout: float = 5,
+) -> bool:
+    """Return True if the IPP endpoint answers Get-Printer-Attributes.
+
+    Some printers (for example those using the Brother debut/1.30 HTTP
+    server) close the connection on HTTP HEAD, or on a bare POST with no
+    IPP body.  Reachability is therefore checked with an IPP
+    Get-Printer-Attributes POST (Content-Type: application/ipp) and a
+    *timeout* second limit.  A valid IPP response — status ``0x0000`` or
+    any other parseable IPP status — means the printer is reachable.
+    Connection or timeout errors are treated as a lack of connection.
+    """
+    try:
+        printer_uri = http_url_to_ipp_uri(http_url)
+        packet = build_get_printer_attributes_packet(printer_uri)
+        async with session.post(
+            http_url,
+            data=packet,
+            headers={"Content-Type": "application/ipp"},
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as resp:
+            body = await resp.read()
+        return ipp_response_is_valid(body)
+    except (aiohttp.ClientError, OSError, TimeoutError):
+        return False
 
 
 def determine_sides(duplex_mode: str, is_booklet: bool) -> str:
