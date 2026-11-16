@@ -136,12 +136,12 @@ from .print_profiles import (
     resolve_default_print_type,
 )
 from .print_handler import (
-    async_probe_ipp_endpoint,
     build_ipp_packet,
     build_get_printer_attributes_packet,
     cups_printer_uri,
     determine_sides,
     http_url_to_ipp_uri,
+    ipp_response_is_valid,
     ipp_response_succeeded,
     is_booklet_job,
     parse_ipp_attributes,
@@ -852,6 +852,37 @@ class AutoPrintData:
     signal_pending_jobs: list[SignalPendingJob] = field(default_factory=list)
     signal_groups: list[dict[str, Any]] = field(default_factory=list)
     signal_groups_checked_at: str | None = None
+
+
+async def async_probe_ipp_endpoint(
+    session: aiohttp.ClientSession,
+    http_url: str,
+    *,
+    timeout: float = 5,
+) -> bool:
+    """Return True if the IPP endpoint answers Get-Printer-Attributes.
+
+    Some printers (for example those using the Brother debut/1.30 HTTP
+    server) close the connection on HTTP HEAD, or on a bare POST with no
+    IPP body.  Reachability is therefore checked with an IPP
+    Get-Printer-Attributes POST (Content-Type: application/ipp) and a
+    *timeout* second limit.  A valid IPP response — status ``0x0000`` or
+    any other parseable IPP status — means the printer is reachable.
+    Connection or timeout errors are treated as a lack of connection.
+    """
+    try:
+        printer_uri = http_url_to_ipp_uri(http_url)
+        packet = build_get_printer_attributes_packet(printer_uri)
+        async with session.post(
+            http_url,
+            data=packet,
+            headers={"Content-Type": "application/ipp"},
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as resp:
+            body = await resp.read()
+        return ipp_response_is_valid(body)
+    except (aiohttp.ClientError, OSError, TimeoutError):
+        return False
 
 
 class AutoPrintCoordinator(DataUpdateCoordinator[AutoPrintData]):

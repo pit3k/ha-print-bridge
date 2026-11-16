@@ -23,7 +23,7 @@ from homeassistant.exceptions import TemplateError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.template import Template
 
-from .print_handler import async_probe_ipp_endpoint
+from .coordinator import async_probe_ipp_endpoint
 
 from .const import (
     CONF_ALLOWED_SENDERS,
