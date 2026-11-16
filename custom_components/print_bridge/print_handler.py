@@ -1,7 +1,7 @@
 """IPP 2.0 packet construction for the Print Bridge integration.
 
 All functions are pure (no I/O, no HA dependencies).  Network I/O is handled
-by the coordinator using aiohttp.
+by ipp_client using aiohttp.
 
 Two printing modes are supported:
 

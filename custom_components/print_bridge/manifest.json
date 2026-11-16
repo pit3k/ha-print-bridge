@@ -1,7 +1,7 @@
 {
   "domain": "print_bridge",
   "name": "Print Bridge",
-  "version": "0.1.33.1",
+  "version": "0.1.33.2",
   "config_flow": true,
   "documentation": "https://github.com/pit3k/ha-print-bridge",
   "issue_tracker": "https://github.com/rubeecube/ha-print-bridge/issues",
@@ -18,12 +18,7 @@
     "striprtf>=0.0.26",
     "xlrd>=2.0.0"
   ],
-  "after_dependencies": [
-    "imap",
-    "zeroconf"
-  ],
-  "codeowners": [
-    "@rubeecube"
-  ],
+  "after_dependencies": ["imap", "zeroconf"],
+  "codeowners": ["@rubeecube"],
   "iot_class": "local_push"
 }

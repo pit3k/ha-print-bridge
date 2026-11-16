@@ -2488,93 +2488,54 @@ async def test_imap_event_posts_pdf_to_fake_ipp_printer(
 
 
 # ---------------------------------------------------------------------------
-# Direct IPP reachability probe (network I/O lives in the coordinator)
+# Printer reachability: Direct IPP uses the shared probe; CUPS stays HEAD
 # ---------------------------------------------------------------------------
 
 
-async def test_async_probe_ipp_endpoint_posts_get_printer_attributes():
-    import aiohttp
-
-    from custom_components.print_bridge.coordinator import async_probe_ipp_endpoint
-    from custom_components.print_bridge.print_handler import http_url_to_ipp_uri
-
-    url = "http://printer.local:631/ipp/print"
-    body = struct.pack(">HHI", 0x0200, 0x0000, 1) + b"\x03"
-    resp = MagicMock()
-    resp.read = AsyncMock(return_value=body)
-    resp.__aenter__ = AsyncMock(return_value=resp)
-    resp.__aexit__ = AsyncMock(return_value=False)
-    session = MagicMock()
-    session.post.return_value = resp
-
-    assert await async_probe_ipp_endpoint(session, url, timeout=5) is True
-
-    session.post.assert_called_once()
-    args, kwargs = session.post.call_args
-    assert args[0] == url
-    assert kwargs["headers"] == {"Content-Type": "application/ipp"}
-    assert isinstance(kwargs["timeout"], aiohttp.ClientTimeout)
-    assert kwargs["timeout"].total == 5
-    packet = kwargs["data"]
-    assert struct.unpack(">H", packet[2:4])[0] == 0x000B
-    assert http_url_to_ipp_uri(url).encode() in packet
-
-
-@pytest.mark.parametrize(
-    "status_code",
-    [0x0000, 0x040A, 0x0507],
-)
-async def test_async_probe_ipp_endpoint_accepts_any_valid_ipp_status(status_code):
-    from custom_components.print_bridge.coordinator import async_probe_ipp_endpoint
-
-    body = struct.pack(">HHI", 0x0200, status_code, 1) + b"\x03"
-    resp = MagicMock()
-    resp.read = AsyncMock(return_value=body)
-    resp.__aenter__ = AsyncMock(return_value=resp)
-    resp.__aexit__ = AsyncMock(return_value=False)
-    session = MagicMock()
-    session.post.return_value = resp
-
-    assert await async_probe_ipp_endpoint(
-        session, "http://printer.local/ipp/print"
-    ) is True
-
-
-async def test_async_probe_ipp_endpoint_returns_false_on_non_ipp_body():
-    from custom_components.print_bridge.coordinator import async_probe_ipp_endpoint
-
-    resp = MagicMock()
-    resp.read = AsyncMock(return_value=b"<!DOCTYPE HTML>")
-    resp.__aenter__ = AsyncMock(return_value=resp)
-    resp.__aexit__ = AsyncMock(return_value=False)
-    session = MagicMock()
-    session.post.return_value = resp
-
-    assert await async_probe_ipp_endpoint(
-        session, "http://printer.local/ipp/print"
-    ) is False
-
-
-@pytest.mark.parametrize(
-    "exc",
-    [
-        "ClientError",
-        "ServerDisconnectedError",
-        "OSError",
-        "TimeoutError",
-    ],
-)
-async def test_async_probe_ipp_endpoint_returns_false_on_connection_errors(exc):
-    import aiohttp
-
-    from custom_components.print_bridge.coordinator import async_probe_ipp_endpoint
-
-    session = MagicMock()
-    err_cls = TimeoutError if exc == "TimeoutError" else (
-        OSError if exc == "OSError" else getattr(aiohttp, exc)
+async def test_direct_ipp_online_check_uses_ipp_probe(hass: HomeAssistant) -> None:
+    """Direct IPP online checks go through the shared Get-Printer-Attributes probe."""
+    _, coordinator = await _setup_coordinator(
+        hass,
+        data={CONF_DIRECT_PRINTER_URL: "http://printer.local:631/ipp/print"},
     )
-    session.post.side_effect = err_cls("closed")
+    session = MagicMock()
+    with (
+        patch(
+            "custom_components.print_bridge.coordinator.async_get_clientsession",
+            return_value=session,
+        ) as get_session,
+        patch(
+            "custom_components.print_bridge.coordinator.async_probe_ipp_endpoint",
+            new=AsyncMock(return_value=True),
+        ) as probe,
+    ):
+        assert await coordinator._async_check_printer_online() is True
 
-    assert await async_probe_ipp_endpoint(
-        session, "http://printer.local/ipp/print"
-    ) is False
+    get_session.assert_called_once_with(coordinator.hass, verify_ssl=False)
+    probe.assert_awaited_once_with(
+        session, "http://printer.local:631/ipp/print", timeout=5
+    )
+    session.head.assert_not_called()
+
+
+async def test_cups_online_check_still_uses_http_head(hass: HomeAssistant) -> None:
+    """CUPS reachability is unchanged: HTTP HEAD of the server URL."""
+    _, coordinator = await _setup_coordinator(hass)
+    resp = MagicMock()
+    resp.status = 200
+    resp.__aenter__ = AsyncMock(return_value=resp)
+    resp.__aexit__ = AsyncMock(return_value=False)
+    session = MagicMock()
+    session.head.return_value = resp
+
+    with patch(
+        "custom_components.print_bridge.coordinator.async_get_clientsession",
+        return_value=session,
+    ) as get_session:
+        assert await coordinator._async_check_printer_online() is True
+
+    get_session.assert_called_once_with(coordinator.hass)
+    session.head.assert_called_once()
+    assert session.head.call_args.args[0] == "http://cups.local:631"
+    assert session.head.call_args.kwargs["timeout"].total == 5
+    session.post.assert_not_called()

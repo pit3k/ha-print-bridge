@@ -77,11 +77,11 @@ def _ipp_ok_body() -> bytes:
 def _make_cups_session(status: int = 200) -> MagicMock:
     """Mock aiohttp session where HEAD, GET, and IPP POST return *status*.
 
-    Direct IPP setup now probes with Get-Printer-Attributes (POST,
+    Direct IPP setup probes with Get-Printer-Attributes (POST,
     Content-Type: application/ipp) rather than HTTP HEAD.  The mock
-    POST body is a valid IPP successful-ok packet so that probe passes
-    when *status* is a success HTTP code.  CUPS discovery still uses
-    GET /printers/ and CUPS validation still uses HEAD.
+    POST body is a valid IPP successful-ok packet so that probe succeeds.
+    CUPS discovery still uses GET /printers/ and CUPS validation still
+    uses HEAD.
     """
     resp = MagicMock()
     resp.status = status
