@@ -1,5 +1,8 @@
 # Print Bridge
 
+> **pit3k fork.** This repository is a fork of [rubeecube/ha-print-bridge](https://github.com/rubeecube/ha-print-bridge) used in Piotr Paczyński's Home Assistant. The `pit3k` branch is release `0.1.33.1` and includes an IPP Get-Printer-Attributes reachability probe for Direct IPP printers that close HTTP HEAD. The upstream pull-request branch is `fix/ipp-probe-get-printer-attributes` and stays at version 0.1.33. See [FORK.md](FORK.md).
+
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/rubeecube/ha-print-bridge/main/hacs.png" alt="Print Bridge logo" width="480"/>
 </p>
@@ -8,7 +11,7 @@
 [![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.4%2B-blue.svg)](https://www.home-assistant.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-244%20passing-brightgreen.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-0.1.33-blue.svg)](https://github.com/rubeecube/ha-print-bridge/releases)
+[![Version](https://img.shields.io/badge/version-0.1.33.1-blue.svg)](https://github.com/pit3k/ha-print-bridge/releases)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository?owner=rubeecube&repository=ha-print-bridge&category=integration)
 [![Add Print Bridge to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=print_bridge)
